@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head id="my-head">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>權順榮的手機 (CARAT 互動模擬器 PRO)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { touch-action: manipulation; }
+    .phone-frame {
+      width: min(90vw, 375px);
+      aspect-ratio: 375 / 812;
+      border: 14px solid #1a1a1a;
+      border-radius: 45px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5), inset 0 0 0 2px #444;
+      background-color: #000;
+      flex-shrink: 0;
+      transition: all 0.5s ease;
+    }
+    .notch {
+      position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+      width: 150px; height: 30px; background-color: #1a1a1a;
+      border-bottom-left-radius: 20px; border-bottom-right-radius: 20px; z-index: 999;
+    }
+    .home-bar-container {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 30px; z-index: 999; display: flex;
+      justify-content: center; align-items: flex-end; padding-bottom: 8px;
+    }
+    .home-bar {
+      width: 130px; height: 5px; background-color: rgba(255, 255, 255, 0.8);
+      border-radius: 10px; cursor: pointer; transition: 0.3s;
+    }
+    .home-bar.dark-mode { background-color: rgba(0, 0, 0, 0.8); }
+    ::-webkit-scrollbar { display: none; }
+    .app-screen {
+      position: absolute; inset: 0; z-index: 50;
+      height: 100%;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      background: #fff;
+      animation: slideUp 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    @keyframes slideUp {
+      from { transform: translateY(100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .story-ring {
+      background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+      padding: 3px; border-radius: 50%;
+    }
+  </style>
+</head>
+<body class="bg-gray-200 min-h-screen overflow-auto font-sans">
+  
+<div id="app"></div>
+
+<template id="app-template">
+  <div class="flex w-full min-h-screen p-4 md:p-6 gap-4 md:gap-8 justify-center items-center flex-wrap relative">
+
+    <!-- ================= 左側：外部獨立控制面板 ================= -->
+    <div v-show="showPanel" class="w-full md:w-[500px] order-2 md:order-1 h-[70vh] md:h-full bg-white rounded-2xl shadow-2xl overflow-y-auto p-6 flex flex-col gap-6 transition-all duration-300">
+      
+      <!-- 備份匯入匯出區 -->
+      <div class="bg-indigo-600 text-white p-5 rounded-xl shadow-lg flex flex-col gap-2">
+        <h2 class="text-lg font-black"><i class="fa-solid fa-database"></i> JSON 備份 / 匯入</h2>
+        <p class="text-xs opacity-90">複製設定、匯入存檔，搭配 ?load=連結自動讀取</p>
+        <div class="flex gap-2">
+          <button @click="copyJSON" class="bg-white text-indigo-700 font-bold py-2.5 rounded-lg mt-1 hover:bg-indigo-50 transition shadow-md flex-1 text-center text-sm">
+            <i class="fa-solid fa-clipboard"></i> 複製JSON設定
+          </button>
+          <label class="bg-white text-indigo-700 font-bold py-2.5 rounded-lg mt-1 hover:bg-indigo-50 transition shadow-md flex-1 text-center text-sm cursor-pointer">
+            <i class="fa-solid fa-upload"></i> 匯入JSON
+            <input type="file" accept="application/json" @change="importJSONFile" class="hidden">
+          </label>
+        </div>
+      </div>
+
+      <div class="border-b pb-4">
+        <h1 class="text-2xl font-black text-gray-800">⚙️ 模擬器設定面板</h1>
+        <p class="text-gray-500 mt-1 text-xs">圖片與音樂上傳後會自動轉換格式，請放心操作。</p>
+      </div>
+
+      <!-- 1. 系統與鎖屏 -->
+      <div class="bg-gray-50 p-4 rounded-xl border">
+        <h2 class="text-lg font-bold mb-3"><i class="fa-solid fa-lock"></i> 系統與鎖屏</h2>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm font-bold">解鎖密碼</label>
+            <input v-model="settings.system.password" type="text" class="w-full border p-2 rounded-lg mt-1">
+          </div>
+          <div>
+            <label class="block text-sm font-bold">自訂桌布 (上傳圖片)</label>
+            <input type="file" accept="image/*" @change="(e) => uploadFile(e, settings.system, 'wallpaper')" class="w-full border p-1 rounded-lg mt-1 bg-white text-sm">
+          </div>
+          <div class="pt-2 border-t">
+            <label class="block text-sm font-bold mb-2">鎖屏通知管理</label>
+            <div v-for="(notif, idx) in settings.system.notifications" :key="idx" class="flex gap-2 mb-2">
+              <input v-model="notif.app" type="text" class="w-1/3 border p-1.5 rounded-lg text-sm" placeholder="APP名">
+              <input v-model="notif.text" type="text" class="w-full border p-1.5 rounded-lg text-sm" placeholder="通知內容">
+              <button @click="settings.system.notifications.splice(idx, 1)" class="text-red-500 px-2"><i class="fa-solid fa-trash"></i></button>
+            </div>
+            <button @click="settings.system.notifications.push({app: '新通知', text: ''})" class="text-sm text-blue-500 font-bold">+ 新增一則通知</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. KakaoTalk -->
+      <div class="bg-yellow-50 p-4 rounded-xl border border-yellow-200">
+        <h2 class="text-lg font-bold mb-3"><i class="fa-solid fa-comment"></i> KakaoTalk 群組與聊天</h2>
+        <div v-if="!editingKakaoChat" class="space-y-3">
+          <div v-for="chat in settings.kakao.chats" :key="chat.id" class="flex items-center justify-between bg-white p-2 rounded-lg border">
+            <div class="flex items-center gap-2">
+              <img :src="chat.avatar || 'https://via.placeholder.com/150'" class="w-8 h-8 rounded-xl object-cover">
+              <span class="font-bold text-sm">{{ chat.name }}</span>
+            </div>
+            <button @click="editingKakaoChat = chat" class="bg-yellow-400 text-xs px-3 py-1 rounded-md font-bold">編輯對話</button>
+          </div>
+          <button @click="addNewKakaoChat" class="w-full py-2 bg-yellow-300 rounded-lg font-bold text-sm text-yellow-800">+ 新增聊天室 / 群組</button>
+        </div>
+        <div v-else class="space-y-3">
+          <button @click="editingKakaoChat = null" class="text-sm text-gray-500 mb-2"><i class="fa-solid fa-arrow-left"></i> 返回列表</button>
+          <div class="flex gap-2">
+            <div class="w-1/2">
+              <label class="block text-xs font-bold">名稱</label>
+              <input v-model="editingKakaoChat.name" type="text" class="w-full border p-1.5 rounded-lg text-sm">
+            </div>
+            <div class="w-1/2">
+              <label class="block text-xs font-bold">上傳大頭貼</label>
+              <input type="file" accept="image/*" @change="(e) => uploadFile(e, editingKakaoChat, 'avatar')" class="w-full border p-1 rounded-lg bg-white text-xs">
+            </div>
+          </div>
+          <div class="pt-2 border-t mt-2">
+            <label class="block text-xs font-bold mb-1">新增對話訊息</label>
+            <div class="flex gap-2">
+              <select v-model="newKakaoMsg.sender" class="border p-1.5 rounded-lg text-sm bg-white">
+                <option value="me">我</option>
+                <option value="other">對方</option>
+              </select>
+              <input v-model="newKakaoMsg.text" type="text" class="flex-1 border p-1.5 rounded-lg text-sm" placeholder="輸入內容...">
+              <button @click="addKakaoMsg(editingKakaoChat)" class="bg-yellow-400 px-3 rounded-lg text-sm font-bold">送出</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Instagram -->
+      <div class="bg-pink-50 p-4 rounded-xl border border-pink-200">
+        <h2 class="text-lg font-bold mb-3"><i class="fa-brands fa-instagram"></i> Instagram</h2>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label class="block text-xs font-bold">帳號名</label>
+            <input v-model="settings.ig.username" type="text" class="w-full border p-1.5 rounded-lg text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-bold">上傳大頭貼</label>
+            <input type="file" accept="image/*" @change="(e) => uploadFile(e, settings.ig, 'avatar')" class="w-full border p-1 rounded-lg bg-white text-xs">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-bold mb-1">上傳限時動態照片 (支援多張)</label>
+          <input type="file" accept="image/*" multiple @change="uploadIGStories" class="w-full border p-1 rounded-lg bg-white text-xs mb-3">
+        </div>
+        <div>
+          <label class="block text-xs font-bold mb-1">上傳貼文照片 (支援多張)</label>
+          <input type="file" accept="image/*" multiple @change="uploadIGGrid" class="w-full border p-1 rounded-lg bg-white text-xs">
+        </div>
+      </div>
+
+      <!-- 4. 音樂清單 -->
+      <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 text-white">
+        <h2 class="text-lg font-bold mb-3"><i class="fa-solid fa-music"></i> 音樂播放清單</h2>
+        <div v-for="(song, idx) in settings.music.playlist" :key="idx" class="bg-gray-700 p-3 rounded-lg mb-2 text-sm">
+          <div class="flex justify-between mb-2">
+            <input v-model="song.title" placeholder="歌名" class="bg-gray-600 border border-gray-500 rounded px-2 py-1 w-1/2 mr-1">
+            <input v-model="song.artist" placeholder="歌手" class="bg-gray-600 border border-gray-500 rounded px-2 py-1 w-1/2">
+          </div>
+          <div class="flex gap-2">
+            <div class="w-1/2">
+              <label class="text-[10px] text-gray-400">上傳音檔 (MP3)</label>
+              <input type="file" accept="audio/*" @change="(e) => uploadFile(e, song, 'audioUrl')" class="w-full text-[10px]">
+            </div>
+            <div class="w-1/2">
+              <label class="text-[10px] text-gray-400">上傳封面</label>
+              <input type="file" accept="image/*" @change="(e) => uploadFile(e, song, 'cover')" class="w-full text-[10px]">
+            </div>
+          </div>
+        </div>
+        <button @click="addSong" class="w-full bg-gray-600 py-1.5 rounded-lg text-sm mt-1">+ 新增一首歌</button>
+      </div>
+
+      <!-- 5. 電話與通訊錄 -->
+      <div class="bg-green-50 p-4 rounded-xl border border-green-200">
+        <h2 class="text-lg font-bold mb-3"><i class="fa-solid fa-address-book"></i> 通訊錄與通話紀錄</h2>
+        <div v-for="(contact, index) in settings.phone.recents" :key="index" class="bg-white p-2 rounded-lg border mb-2">
+          <div class="flex gap-2 mb-2">
+            <input v-model="contact.name" type="text" class="w-1/3 border p-1 rounded text-sm" placeholder="名稱">
+            <input v-model="contact.time" type="text" class="w-1/4 border p-1 rounded text-sm" placeholder="時間">
+            <select v-model="contact.type" class="w-1/3 border p-1 rounded text-sm">
+              <option value="missed">未接</option>
+              <option value="outgoing">撥出</option>
+              <option value="incoming">接聽</option>
+            </select>
+          </div>
+          <label class="text-xs font-bold text-gray-600">上傳聯絡人照片</label>
+          <input type="file" accept="image/*" @change="(e) => uploadFile(e, contact, 'avatar')" class="w-full text-xs">
+        </div>
+        <button @click="addContact" class="w-full bg-green-200 py-1.5 rounded-lg text-sm text-green-800 font-bold">+ 新增聯絡人紀錄</button>
+      </div>
+    </div>
+
+    <!-- ================= 右側：手機模擬器 (Phone UI) ================= -->
+    <div class="phone-frame flex flex-col justify-between shadow-2xl order-1 md:order-2" 
+         :style="{ backgroundImage: activeApp ? 'none' : 'url(' + settings.system.wallpaper + ')', backgroundSize: 'cover', backgroundPosition: 'center' }">
+      
+      <div class="notch"></div>
+      
+      <!-- 狀態列 -->
+      <div class="absolute top-0 w-full h-8 flex justify-between items-end px-7 pb-1 text-[12px] font-bold z-50 pointer-events-none" :class="statusTextClass">
+        <span @click="handleTimeClick" class="pointer-events-auto cursor-pointer" title="連點5次隱藏/顯示控制面板">{{ displayTime }}</span>
+        <div class="flex gap-1.5 items-center text-[10px]">
+          <i class="fa-solid fa-signal"></i>
+          <i class="fa-solid fa-wifi"></i>
+          <i class="fa-solid fa-battery-full text-[12px]"></i>
+        </div>
+      </div>
+
+      <!-- ===== 鎖定畫面 ===== -->
+      <div v-if="!isUnlocked" class="absolute inset-0 z-40 bg-black/30 flex flex-col items-center pt-24 text-white">
+        <div class="text-[80px] font-thin tracking-wider drop-shadow-lg leading-none">{{ displayTime }}</div>
+        <div class="text-xl mt-1 drop-shadow-md font-medium">{{ displayDate }}</div>
+        
+        <div class="mt-8 w-11/12 space-y-3 max-h-[300px] overflow-y-auto pointer-events-auto">
+          <div v-for="(notif, i) in settings.system.notifications" :key="i" class="bg-white/20 backdrop-blur-2xl rounded-2xl p-3.5 flex gap-3 shadow-lg border border-white/20">
+            <div class="w-9 h-9 bg-white/90 rounded-lg flex items-center justify-center text-lg shadow-inner text-gray-800">
+              <i class="fa-solid fa-bell"></i>
+            </div>
+            <div class="flex-1">
+              <div class="text-xs font-bold flex justify-between w-full opacity-90">
+                <span>{{ notif.app }}</span>
+                <span class="text-[10px] font-normal">現在</span>
+              </div>
+              <div class="text-[13px] font-medium mt-0.5 drop-shadow-sm">{{ notif.text }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="showPasswordUI" class="absolute inset-0 bg-black/80 backdrop-blur-3xl flex flex-col items-center justify-center z-50 pointer-events-auto">
+          <h3 class="mb-6 text-xl tracking-widest font-medium">輸入密碼</h3>
+          <div class="flex gap-5 mb-12">
+            <div v-for="i in 4" class="w-3.5 h-3.5 rounded-full border-2 border-white transition-all duration-200" :class="{'bg-white': inputPin.length >= i}"></div>
+          </div>
+          <div class="grid grid-cols-3 gap-x-8 gap-y-6 text-3xl font-light">
+            <button v-for="n in 9" @click="pressPin(n)" class="w-[75px] h-[75px] rounded-full bg-white/10 hover:bg-white/30 flex items-center justify-center transition">{{n}}</button>
+            <div></div>
+            <button @click="pressPin(0)" class="w-[75px] h-[75px] rounded-full bg-white/10 hover:bg-white/30 flex items-center justify-center transition">0</button>
+            <button @click="clearPin" class="w-[75px] h-[75px] rounded-full flex items-center justify-center text-sm font-bold hover:bg-white/10 transition">刪除</button>
+          </div>
+        </div>
+        
+        <div v-if="!showPasswordUI" @click="showPasswordUI = true" class="absolute bottom-8 w-full text-center text-xs font-bold tracking-widest animate-pulse cursor-pointer p-4 pointer-events-auto">
+          點擊解鎖
+        </div>
+      </div>
+
+      <!-- ===== 主畫面 ===== -->
+      <div v-if="isUnlocked && !activeApp" class="absolute inset-0 z-30 pt-16 px-6 pointer-events-auto">
+        <div class="grid grid-cols-4 gap-x-4 gap-y-8">
+          <div @click="openApp('kakao')" class="flex flex-col items-center cursor-pointer hover:opacity-80 transition">
+            <div class="w-[60px] h-[60px] bg-[#FEE500] rounded-[14px] flex items-center justify-center text-black text-3xl"><i class="fa-solid fa-comment"></i></div>
+            <span class="text-white text-[11px] mt-1.5 font-medium drop-shadow-md">KakaoTalk</span>
+          </div>
+          <div @click="openApp('ig')" class="flex flex-col items-center cursor-pointer hover:opacity-80 transition">
+            <div class="w-[60px] h-[60px] bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] rounded-[14px] flex items-center justify-center text-white text-4xl"><i class="fa-brands fa-instagram"></i></div>
+            <span class="text-white text-[11px] mt-1.5 font-medium drop-shadow-md">Instagram</span>
+          </div>
+          <div @click="openApp('music')" class="flex flex-col items-center cursor-pointer hover:opacity-80 transition">
+            <div class="w-[60px] h-[60px] bg-[#fa243c] rounded-[14px] flex items-center justify-center text-white text-3xl"><i class="fa-solid fa-music"></i></div>
+            <span class="text-white text-[11px] mt-1.5 font-medium drop-shadow-md">Music</span>
+          </div>
+          <div @click="openApp('phone')" class="flex flex-col items-center cursor-pointer hover:opacity-80 transition">
+            <div class="w-[60px] h-[60px] bg-[#34c759] rounded-[14px] flex items-center justify-center text-white text-3xl"><i class="fa-solid fa-phone"></i></div>
+            <span class="text-white text-[11px] mt-1.5 font-medium drop-shadow-md">電話</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 應用程式介面 ================= -->
+      
+      <!-- 1. KakaoTalk -->
+      <div v-if="activeApp === 'kakao'" class="app-screen bg-white flex flex-col text-black pointer-events-auto">
+        <div v-if="!currentKakaoChat" class="h-full flex flex-col">
+          <div class="pt-14 pb-2 px-5 flex justify-between items-center bg-white">
+            <h1 class="text-2xl font-bold">聊天</h1>
+            <div class="flex gap-4 text-xl"><i class="fa-solid fa-magnifying-glass"></i><i class="fa-solid fa-plus"></i><i class="fa-solid fa-gear"></i></div>
+          </div>
+          <div class="flex-1 overflow-y-auto px-5">
+            <div v-for="chat in settings.kakao.chats" :key="chat.id" @click="currentKakaoChat = chat" class="flex items-center gap-3 py-3 cursor-pointer">
+              <img :src="chat.avatar || 'https://via.placeholder.com/150'" class="w-12 h-12 rounded-[18px] object-cover">
+              <div class="flex-1">
+                <div class="font-bold text-[15px]">{{ chat.name }}</div>
+                <div class="text-[13px] text-gray-500 truncate">{{ chat.messages.length > 0 ? chat.messages[chat.messages.length - 1].text : '尚未有訊息' }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="h-full bg-[#b2c7d9] flex flex-col relative">
+          <div class="bg-[#b2c7d9]/90 backdrop-blur-md pt-12 pb-3 px-4 flex items-center justify-between shadow-sm sticky top-0 z-10">
+            <i @click="currentKakaoChat = null" class="fa-solid fa-chevron-left text-xl cursor-pointer p-2"></i>
+            <span class="text-[17px] font-bold">{{ currentKakaoChat.name }}</span>
+            <i class="fa-solid fa-bars text-xl p-2"></i>
+          </div>
+          <div class="flex-1 p-4 overflow-y-auto space-y-4 pb-24">
+            <div v-for="(msg, idx) in currentKakaoChat.messages" :key="idx" class="flex w-full" :class="msg.sender === 'me' ? 'justify-end' : 'justify-start'">
+              <img v-if="msg.sender === 'other'" :src="currentKakaoChat.avatar || 'https://via.placeholder.com/150'" class="w-9 h-9 rounded-[14px] mr-2 object-cover">
+              <div class="max-w-[75%]">
+                <div v-if="msg.sender === 'other'" class="text-[11px] text-gray-600 mb-1 ml-1">{{ currentKakaoChat.name }}</div>
+                <div class="px-3 py-2 rounded-2xl text-[14px] shadow-sm leading-snug" :class="msg.sender === 'me' ? 'bg-[#FEE500] text-black rounded-tr-sm' : 'bg-white text-black rounded-tl-sm'">
+                  {{ msg.text }}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white p-2.5 flex items-center gap-3 absolute bottom-0 w-full pb-8 border-t">
+            <i class="fa-solid fa-plus text-gray-400 text-2xl"></i>
+            <div class="flex-1 bg-gray-100 rounded-full h-9 px-4 flex items-center"><span class="text-gray-400 text-[13px]">輸入訊息...</span></div>
+            <i class="fa-regular fa-face-smile text-gray-400 text-2xl"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Instagram -->
+      <div v-if="activeApp === 'ig'" class="app-screen bg-white flex flex-col text-black pointer-events-auto">
+        <div class="pt-12 pb-2 px-4 flex items-center justify-between sticky top-0 bg-white z-10">
+          <div class="font-bold text-[22px] flex items-center gap-1">{{ settings.ig.username }} <i class="fa-solid fa-chevron-down text-[12px]"></i></div>
+          <div class="flex gap-5 text-2xl"><i class="fa-regular fa-square-plus"></i><i class="fa-solid fa-bars"></i></div>
+        </div>
+        <div class="overflow-y-auto pb-20">
+          <div class="flex gap-4 px-4 py-3 border-b overflow-x-auto">
+            <div class="flex flex-col items-center min-w-max">
+              <div class="w-[68px] h-[68px] rounded-full relative">
+                <img :src="settings.ig.avatar || 'https://via.placeholder.com/150'" class="w-full h-full rounded-full object-cover">
+                <div class="absolute bottom-0 right-0 bg-blue-500 rounded-full border-2 border-white w-5 h-5 flex items-center justify-center text-white text-xs"><i class="fa-solid fa-plus"></i></div>
+              </div>
+              <span class="text-[11px] mt-1 text-gray-500">新增限時動態</span>
+            </div>
+            <div v-for="(story, idx) in settings.ig.stories" :key="idx" class="flex flex-col items-center min-w-max">
+              <div class="story-ring w-[68px] h-[68px]">
+                <img :src="story" class="w-full h-full rounded-full border-2 border-white object-cover">
+              </div>
+              <span class="text-[11px] mt-1">限時動態</span>
+            </div>
+          </div>
+          <div class="p-4">
+            <div class="flex items-center justify-between mb-3">
+              <div class="story-ring w-[86px] h-[86px]">
+                <img :src="settings.ig.avatar || 'https://via.placeholder.com/150'" class="w-full h-full rounded-full border-[3px] border-white object-cover">
+              </div>
+              <div class="flex gap-5 text-center flex-1 justify-center">
+                <div><div class="font-bold text-[17px]">{{ settings.ig.grid.length }}</div><div class="text-[13px]">貼文</div></div>
+                <div><div class="font-bold text-[17px]">5.2M</div><div class="text-[13px]">粉絲</div></div>
+                <div><div class="font-bold text-[17px]">13</div><div class="text-[13px]">追蹤中</div></div>
+              </div>
+            </div>
+            <div class="text-[14px] font-medium whitespace-pre-line leading-snug">SEVENTEEN HOSHI\nDance / Music</div>
+            <div class="flex gap-2 mt-4">
+              <button class="flex-1 bg-[#efefef] py-1.5 rounded-lg font-semibold text-[13px]">編輯個人檔案</button>
+              <button class="flex-1 bg-[#efefef] py-1.5 rounded-lg font-semibold text-[13px]">分享個人檔案</button>
+            </div>
+          </div>
+          <div class="flex justify-around border-t border-b py-2 text-2xl">
+            <i class="fa-solid fa-table-cells"></i><i class="fa-regular fa-circle-play text-gray-400"></i><i class="fa-regular fa-user text-gray-400"></i>
+          </div>
+          <div class="grid grid-cols-3 gap-[1px]">
+            <div v-for="(img, idx) in settings.ig.grid" :key="idx" class="aspect-square bg-gray-200">
+              <img :src="img" class="w-full h-full object-cover">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Music 播放器 -->
+      <div v-if="activeApp === 'music'" class="app-screen bg-gradient-to-b from-gray-800 to-black text-white flex flex-col pt-16 px-6 pointer-events-auto">
+        <div v-if="settings.music.playlist.length > 0" class="flex flex-col items-center">
+          <div class="text-[10px] font-bold text-gray-400 tracking-widest mb-6">從播放清單播放</div>
+          <img :src="settings.music.playlist[currentSongIndex]?.cover || 'https://via.placeholder.com/300'" class="w-[280px] h-[280px] rounded-xl shadow-2xl mb-8 object-cover border border-white/10">
+          <div class="w-full flex justify-between items-end mb-6">
+            <div class="overflow-hidden">
+              <h2 class="text-2xl font-bold truncate">{{ settings.music.playlist[currentSongIndex]?.title || '未知歌曲' }}</h2>
+              <p class="text-pink-400 text-lg opacity-90 truncate">{{ settings.music.playlist[currentSongIndex]?.artist || '未知歌手' }}</p>
+            </div>
+            <i class="fa-solid fa-ellipsis text-2xl text-gray-400"></i>
+          </div>
+          <audio :src="settings.music.playlist[currentSongIndex]?.audioUrl" controls class="w-full h-10 mb-4 invert grayscale hue-rotate-180 opacity-80">
+        </div>
+        <div v-else class="text-center text-gray-500 mt-20">請從控制面板上傳音樂</div>
+        <div class="mt-8 border-t border-white/20 pt-4 flex-1 overflow-y-auto pb-10">
+          <h3 class="text-sm font-bold mb-4">接下來播放</h3>
+          <div v-for="(song, idx) in settings.music.playlist" :key="idx" @click="currentSongIndex = idx" class="flex items-center gap-3 mb-3 cursor-pointer p-2 rounded-lg" :class="{'bg-white/10': currentSongIndex === idx}">
+            <img :src="song.cover || 'https://via.placeholder.com/50'" class="w-10 h-10 rounded object-cover">
+            <div>
+              <div class="text-sm font-bold" :class="{'text-pink-400': currentSongIndex === idx}">{{ song.title || '無標題' }}</div>
+              <div class="text-xs text-gray-400">{{ song.artist }}</div>
+            </div>
+            <i v-if="currentSongIndex === idx" class="fa-solid fa-chart-simple ml-auto text-pink-400"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Phone (電話) -->
+      <div v-if="activeApp === 'phone'" class="app-screen bg-black text-white flex flex-col pointer-events-auto">
+        <div class="pt-14 px-4 pb-2 flex justify-between items-end">
+          <h1 class="text-[34px] font-bold tracking-tight">最近通話</h1>
+          <span class="text-blue-500 text-lg mb-1">編輯</span>
+        </div>
+        <div class="flex-1 overflow-y-auto px-4 mt-2">
+          <div class="mb-4">
+            <div class="bg-[#1c1c1e] rounded-[10px] flex p-1">
+              <div class="flex-1 text-center py-1 bg-[#636366] rounded-[7px] text-sm font-semibold">全部</div>
+              <div class="flex-1 text-center py-1 text-sm font-semibold text-gray-400">未接來電</div>
+            </div>
+          </div>
+          <div v-for="(contact, i) in settings.phone.recents" :key="i" class="py-2.5 border-b border-[#38383a] flex justify-between items-center">
+            <div class="flex items-center gap-3">
+              <img :src="contact.avatar || 'https://via.placeholder.com/40'" class="w-10 h-10 rounded-full object-cover border border-gray-700">
+              <div class="flex flex-col">
+                <span class="text-[17px] font-medium" :class="contact.type === 'missed' ? 'text-red-500' : 'text-white'">{{ contact.name }}</span>
+                <span class="text-[13px] text-gray-500 flex items-center gap-1 mt-0.5">
+                  <i v-if="contact.type === 'outgoing'" class="fa-solid fa-phone-arrow-up text-[10px]"></i>
+                  <i v-if="contact.type === 'incoming'" class="fa-solid fa-phone-arrow-down text-[10px]"></i>行動電話
+                </span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-gray-500 text-[15px]">{{ contact.time }}</span><i class="fa-solid fa-circle-info text-blue-500 text-[22px] ml-1"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Home 橫條 -->
+      <div class="home-bar-container pointer-events-auto" @click="goHome">
+        <div class="home-bar" :class="{'dark-mode': activeApp === 'ig' || (activeApp === 'kakao' && currentKakaoChat)}"></div>
+      </div>
+
+    </div>
+  </div>
+</template>
+
+<script id="main-script">
+  const { createApp, ref, computed, watch } = Vue;
+
+  createApp({
+    template: document.getElementById('app-template').innerHTML,
+    setup() {
+      const showPanel = ref(true);
+      const isUnlocked = ref(false);
+      const showPasswordUI = ref(false);
+      const inputPin = ref('');
+      const activeApp = ref(null);
+      const displayTime = ref('00:00');
+      const displayDate = ref('1月1日 星期一');
+
+      // 時鐘更新
+      setInterval(() => {
+        const now = new Date();
+        displayTime.value = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+        const days = ['日', '一', '二', '三', '四', '五', '六'];
+        displayDate.value = (now.getMonth() + 1) + '月' + now.getDate() + '日 星期' + days[now.getDay()];
+      }, 1000);
+
+      // 連點5次時間隱藏/顯示控制面板
+      const clickCount = ref(0);
+      let clickTimer = null;
+      const handleTimeClick = () => {
+        clickCount.value++;
+        if (clickCount.value >= 5) {
+          showPanel.value = !showPanel.value;
+          clickCount.value = 0;
+        }
+        clearTimeout(clickTimer);
+        clickTimer = setTimeout(() => { clickCount.value = 0; }, 1000);
+      };
+
+      const defaultSettings = {
+        system: {
+          password: '0615',
+          wallpaper: 'https://images.unsplash.com/photo-1518791841217-8f162f1e1131?auto=format&fit=crop&w=600&q=80',
+          notifications: [
+            { app: 'KakaoTalk', text: '毓君啊，明天影片剪輯要討論喔！' },
+            { app: 'Instagram', text: 'ho5hi_kwon 剛剛發布了新貼文' }
+          ]
+        },
+        kakao: {
+          chats: [
+            {
+              id: 1, name: '影片專案群組 🎬', avatar: 'https://images.unsplash.com/photo-1527082395-e93953e5bf36?auto=format&fit=crop&w=150&q=80',
+              messages: [
+                { sender: 'other', text: '請問數位行銷的企劃書弄好了嗎？' },
+                { sender: 'me', text: '馬上傳過去！等我一下' }
+              ]
+            }
+          ]
+        },
+        ig: { username: 'ho5hi_kwon', avatar: '', stories: [], grid: [] },
+        music: { playlist: [{ title: 'Spider', artist: 'HOSHI', cover: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&w=400&q=80', audioUrl: '' }] },
+        phone: { recents: [{ name: '翁毓君', time: '昨天', type: 'missed', avatar: '' }] }
+      };
+      const settings = ref(JSON.parse(JSON.stringify(defaultSettings)));
+
+      // 讀取網址參數 ?load=xxx
+      const urlParams = new URLSearchParams(location.search);
+      const loadUrl = urlParams.get('load');
+      if(loadUrl){
+        fetch(loadUrl)
+        .then(res=>{
+          if(!res.ok) throw new Error("載入失敗");
+          return res.json();
+        })
+        .then(data=>{
+          settings.value = data;
+          alert("✅ 自動載入備份成功");
+        })
+        .catch(err=>{
+          console.error(err);
+          alert("❌ 自動載入JSON失敗，檢查連結是否允許跨域");
+        })
+      }
+
+      // 匯入本地JSON檔案
+      const importJSONFile = (e)=>{
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = ev=>{
+          try{
+            const data = JSON.parse(ev.target.result);
+            settings.value = data;
+            alert("✅ 匯入備份成功！");
+          }catch(err){
+            alert("❌ JSON格式錯誤，無法匯入");
+            console.error(err);
+          }
+        }
+        reader.readAsText(file);
+        e.target.value = "";
+      }
+
+      // 檔案上傳轉 Base64
+      const uploadFile = (event, targetObj, key) => {
+        const file = event.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (e) => { targetObj[key] = e.target.result; };
+          reader.readAsDataURL(file);
+        }
+      };
+
+      const uploadIGStories = (e) => {
+        Array.from(e.target.files).forEach(file => {
+          const reader = new FileReader();
+          reader.onload = (ev) => settings.value.ig.stories.push(ev.target.result);
+          reader.readAsDataURL(file);
+        });
+      };
+      const uploadIGGrid = (e) => {
+        Array.from(e.target.files).forEach(file => {
+          const reader = new FileReader();
+          reader.onload = (ev) => settings.value.ig.grid.push(ev.target.result);
+          reader.readAsDataURL(file);
+        });
+      };
+
+      const currentKakaoChat = ref(null);
+      const editingKakaoChat = ref(null);
+      const newKakaoMsg = ref({ sender: 'me', text: '' });
+
+      const addNewKakaoChat = () => {
+        const newChat = { id: Date.now(), name: '新聊天室', avatar: '', messages: [] };
+        settings.value.kakao.chats.push(newChat);
+        editingKakaoChat.value = newChat;
+      };
+      const addKakaoMsg = (chat) => {
+        if (!newKakaoMsg.value.text.trim()) return;
+        chat.messages.push({ sender: newKakaoMsg.value.sender, text: newKakaoMsg.value.text });
+        newKakaoMsg.value.text = '';
+      };
+
+      const currentSongIndex = ref(0);
+      const addSong = () => { settings.value.music.playlist.push({ title: '新歌曲', artist: '未知', cover: '', audioUrl: '' }); };
+      const addContact = () => { settings.value.phone.recents.unshift({ name: '新聯絡人', time: '剛剛', type: 'missed', avatar: '' }); };
+
+      const pressPin = (num) => {
+        if (inputPin.value.length < 4) {
+          inputPin.value += num;
+          if (inputPin.value.length === 4 && inputPin.value === settings.value.system.password) {
+            setTimeout(() => { isUnlocked.value = true; showPasswordUI.value = false; inputPin.value = ''; }, 300);
+          } else if (inputPin.value.length === 4) {
+            setTimeout(() => { inputPin.value = ''; }, 300);
+          }
+        }
+      };
+      const clearPin = () => { inputPin.value = ''; };
+      const openApp = (app) => { activeApp.value = app; };
+      const goHome = () => { activeApp.value = null; };
+      const statusTextClass = computed(() => (activeApp.value === 'ig' || (activeApp.value === 'kakao' && currentKakaoChat.value)) ? 'text-black' : 'text-white drop-shadow-md');
+
+      // ★ 複製設定JSON到剪貼簿 ★
+      const copyJSON = () => {
+        const jsonString = JSON.stringify(settings.value, null, 2);
+        navigator.clipboard.writeText(jsonString).then(() => {
+          alert("✅ 成功複製所有設定！");
+        }).catch(err => {
+          prompt("請手動複製以下代碼：", jsonString);
+        });
+      };
+
+      return {
+        showPanel, isUnlocked, showPasswordUI, inputPin, activeApp, displayTime, displayDate, settings,
+        uploadFile, uploadIGStories, uploadIGGrid, handleTimeClick, copyJSON, importJSONFile,
+        currentKakaoChat, editingKakaoChat, newKakaoMsg, addNewKakaoChat, addKakaoMsg,
+        currentSongIndex, addSong, addContact,
+        pressPin, clearPin, openApp, goHome, statusTextClass
+      };
+    }
+  }).mount('#app');
+</script>
+</body>
+</html>
